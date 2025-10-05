@@ -2,36 +2,45 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import dotenv from "dotenv";
+
+dotenv.config(); // Cargar .env
 
 const app = express();
-app.use(cors());
 
+// Configurar CORS
+const corsOptions = {
+  origin: process.env.CLIENT_URL || "*", // usa la URL del frontend si está definida
+  methods: ["GET", "POST"],
+  credentials: true,
+};
+app.use(cors(corsOptions));
+
+// Crear servidor HTTP + Socket.IO
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-  },
+  cors: corsOptions,
 });
 
 // === HISTORIAL GLOBAL COMPARTIDO ===
 let history = [];
 let undone = [];
 
-// Cuando un cliente se conecta
+// Conexión de sockets
 io.on("connection", (socket) => {
   console.log("🟢 Cliente conectado:", socket.id);
 
-  // Enviar historial actual al nuevo cliente
+  // Enviar historial al nuevo cliente
   socket.emit("init", history);
 
-  // Cuando alguien dibuja
+  // Evento de dibujo
   socket.on("drawing", (data) => {
     history.push(data);
-    undone = []; // si dibuja, se limpia el stack de redo
-    io.emit("drawing", data); // retransmitir a todos
+    undone = []; // Al dibujar se reinicia el stack de rehacer
+    io.emit("drawing", data); // Emitir a todos
   });
 
-  // Deshacer (undo)
+  // Evento de deshacer (undo)
   socket.on("undo", () => {
     if (history.length > 0) {
       const last = history.pop();
@@ -40,7 +49,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Rehacer (redo)
+  // Evento de rehacer (redo)
   socket.on("redo", () => {
     if (undone.length > 0) {
       const redoStroke = undone.pop();
@@ -49,17 +58,22 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Limpiar todo
+  // Evento de limpiar
   socket.on("clear", () => {
     history = [];
     undone = [];
     io.emit("clear");
   });
 
+  // Cliente desconectado
   socket.on("disconnect", () => {
     console.log("🔴 Cliente desconectado:", socket.id);
   });
 });
 
+// Puerto configurable
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`✅ Servidor activo en puerto ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`✅ Servidor activo en puerto ${PORT}`);
+});
+
